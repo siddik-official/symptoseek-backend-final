@@ -57,6 +57,31 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => console.log("MongoDB Connected"))
 .catch(err => console.log(err));
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    service: 'SymptoSeek Backend',
+    version: '1.0.0'
+  });
+});
+
+// Flask service proxy for medical report uploads
+app.use('/api/upload-report', (req, res, next) => {
+  // For now, return a simple response. In production, you'd proxy to Flask
+  // or include Flask as a subprocess
+  if (req.method === 'POST') {
+    res.json({
+      success: false,
+      error: 'Medical report analysis service is being configured. Please try again later.',
+      message: 'Flask ML service will be available once fully deployed.'
+    });
+  } else {
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+});
+
 // Routes
 app.use("/api/admin", adminRoutes);
 app.use("/api/auth", authRoutes);
