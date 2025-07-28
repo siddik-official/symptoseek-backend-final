@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 // const dotenv = require("dotenv");
 const cors = require("cors");
 const cloudinary = require("cloudinary").v2;
-
+const { startFlaskService, stopFlaskService } = require('./flask-manager');
 
 // Routes
 const adminRoutes = require("./routes/admin");
@@ -68,17 +68,37 @@ app.get('/api/health', (req, res) => {
 });
 
 // Flask service proxy for medical report uploads
-app.use('/api/upload-report', (req, res, next) => {
-  // For now, return a simple response. In production, you'd proxy to Flask
-  // or include Flask as a subprocess
-  if (req.method === 'POST') {
-    res.json({
-      success: false,
-      error: 'Medical report analysis service is being configured. Please try again later.',
-      message: 'Flask ML service will be available once fully deployed.'
+const multer = require('multer');
+const upload = multer();
+
+app.post('/api/upload-report', upload.single('file'), async (req, res) => {
+  try {
+    // Proxy request to Flask service
+    const axios = require('axios');
+    const FormData = require('form-data');
+    
+    const formData = new FormData();
+    
+    // Handle file upload
+    if (req.file) {
+      formData.append('file', req.file.buffer, req.file.originalname);
+    }
+    
+    const flaskResponse = await axios.post('http://localhost:5001/api/upload-report', formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+      timeout: 30000 // 30 second timeout
     });
-  } else {
-    res.status(405).json({ error: 'Method not allowed' });
+    
+    res.json(flaskResponse.data);
+  } catch (error) {
+    console.error('Flask proxy error:', error.message);
+    res.status(500).json({
+      success: false,
+      error: 'Medical report analysis service is temporarily unavailable. Please try again later.',
+      message: 'Flask ML service connection failed.'
+    });
   }
 });
 
@@ -106,9 +126,19 @@ initializeSchedules()
   .then(() => console.log("Reminder schedules initialized successfully."))
   .catch(err => console.error("Error initializing reminder schedules:", err));
 
+// Start Flask ML service in production
+if (process.env.NODE_ENV === 'production') {
+  setTimeout(() => {
+    startFlaskService();
+  }, 3000); // Start Flask 3 seconds after Node.js server
+}
+
 // Create a single, robust graceful shutdown function
 const gracefulShutdown = async (signal) => {
   console.log(`\n${signal} received. Shutting down gracefully...`);
+
+  // Stop Flask service first
+  stopFlaskService();
 
   // Stop the server from accepting new connections
   server.close(async (err) => {
